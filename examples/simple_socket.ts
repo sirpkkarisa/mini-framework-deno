@@ -1,4 +1,4 @@
-import { Application } from "../server.ts";
+import { Application, ResponseHandler } from "../modules.ts";
 
 /**
  * EXAMPLE 2
@@ -7,8 +7,8 @@ import { Application } from "../server.ts";
 const app = new Application();
 app.serve({ port: 5555 });
 
-app.get("/", "public:index.html");
-app.socket("/chat", (socket, res) => {
+app.router.get("/", "public:index.html");
+app.router.socket("/chat", (socket: WebSocket, _res: ResponseHandler) => {
   socket.onopen = () => {
     socket.send(JSON.stringify({
       event: {
@@ -17,13 +17,17 @@ app.socket("/chat", (socket, res) => {
     }));
     console.log("Socket connected ");
   };
-  socket.omessage = (message) => {
-    message = JSON.parse(message.data);
-    switch (message.event.type) {
-      case "test":
-        socket.send(res.json({
+
+  socket.onmessage = (message: MessageEvent<string>) => {
+    const msg = JSON.parse(message.data) as Record<
+      string,
+      Record<string, unknown>
+    >;
+    switch (msg.event.type) {
+      case "user-connected":
+        socket.send(JSON.stringify({
           event: {
-            type: "test",
+            type: "welcome",
             message: "welcome",
           },
         }));

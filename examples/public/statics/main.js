@@ -2,24 +2,23 @@
   const socket = new WebSocket(`ws://${location.host}/chat`);
 
   socket.onopen = () => {
-    socket.send(JSON.stringify({
-      event: {
-        type: "user-connected",
-      },
-    }));
     console.log("Connection established! ", Date.now());
   };
 
-  socket.omessage = (message) => {
-    message = JSON.parse(message);
+  socket.onmessage = (message) => {
+    message = JSON.parse(message.data);
     switch (message.event.type) {
-      case "test":
+      case "user-connected":
+        console.log(message);
         socket.send(JSON.stringify({
           event: {
-            type: "test",
-            message: "welcome",
+            type: "welcome",
+            message: "Thanks",
           },
         }));
+        break;
+      case "welcome":
+        console.log(message.event.type);
         break;
     }
   };

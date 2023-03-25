@@ -1,4 +1,4 @@
-import { Application } from "../server.ts";
+import { Application, ResponseHandler } from "../modules.ts";
 
 /**
  * EXAMPLE 1
@@ -7,11 +7,29 @@ import { Application } from "../server.ts";
 const app = new Application();
 app.serve({ port: 5555 });
 
-app.get("/", "public:index.html");
-app.get("/js", "public:main.js");
-app.get("/home", (_req, res) => res.json("home"));
-app.get("/hello", (_req, res) => res.json("hello"));
-app.post("/", (_req, res) => res.json({ message: "post" }));
-app.put("/", (_req, res) => res.json({ message: "put" }));
-app.patch("/", (_req, res) => res.json({ message: "patch" }));
-app.delete("/", (_req, res) => res.json({ message: "delete" }));
+app.router.get("/", "public:index.html");
+app.router.get("/css", "public:style.css");
+app.router.get(
+  "/home",
+  (_req: Request, res: ResponseHandler) => res.send("home").ok(),
+);
+app.router.get(
+  "/hello",
+  (_req: Request, res: ResponseHandler) => res.send("hello").ok(),
+);
+app.router.post(
+  "/",
+  (_req: Request, res: ResponseHandler) => res.json({ message: "post" }).ok(),
+);
+app.router.put(
+  "/",
+  (_req: Request, res: ResponseHandler) => res.json({ message: "put" }).ok(),
+);
+app.router.patch(
+  "/",
+  (_req: Request, res: ResponseHandler) => res.json({ message: "patch" }).ok(),
+);
+app.router.delete(
+  "/",
+  (_req: Request, res: ResponseHandler) => res.json({ message: "delete" }).ok(),
+);
