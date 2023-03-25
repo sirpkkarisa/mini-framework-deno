@@ -1,58 +1,37 @@
+// deno-lint-ignore-file
+import { RequestHandler, ResponseHandler, RouteHandler } from "./modules.ts";
+
 interface initVals {
-  port?: number;
+  port: number;
   message?: string;
 }
 
-class ResponseHandler {
-  json(data: Record<string, unknown>) {
-    this.data = JSON.stringify(data);
-    return this;
-  }
-
-  send(data: unknown) {
-    this.data = data;
-    return this;
-  }
-
-  status(value: number) {
-    this.status = value;
-    return this;
-  }
+interface route_type {
+  pathname: string;
+  method?: string;
+  value: Function | string;
 }
 
-// This function does not always work!!
-async function scanDir(path: string, filename: string) {
-  const concatDirAndFile = path + "/" + filename;
-  try {
-    const dir = await Deno.lstat(concatDirAndFile);
-    if (dir.isFile) {
-      return Deno.readFile(concatDirAndFile);
-    }
-  } catch (_error) {
-    for await (const entry of Deno.readDir(path)) {
-      if (entry.isDirectory) {
-        return scanDir(path + "/" + entry.name, filename);
-      }
-    }
-
-    return "Not Found: " + filename;
-  }
-}
-
+// Main class
 export class Application {
+  private response: ResponseHandler;
+  private routes: route_type[];
+  private request: RequestHandler | undefined;
+  router: RouteHandler;
   constructor() {
-    this.responseHandler = new ResponseHandler();
+    this.response = new ResponseHandler();
     this.routes = [];
+    this.router = new RouteHandler(this.routes);
   }
-
+  // Initialize the server
   async serve(values: initVals) {
-    const server = await Deno.listen({ port: values.port });
+    const server = Deno.listen({ port: values.port });
     values.message = values.message ??
       "Server is running on port " + values.port;
     console.log(values.message);
 
     for await (const conn of server) {
-      const http = await Deno.serveHttp(conn);
+      const http = Deno.serveHttp(conn);
       (async () => {
         for await (const reqEvent of http) {
           await reqEvent.respondWith(this.requestHandler(reqEvent.request));
@@ -61,125 +40,47 @@ export class Application {
     }
   }
 
-  private async requestHandler(req: Request) {
+  private async requestHandler(req: Request): Promise<Response> {
     const { url, method } = req;
     const { pathname } = new URL(url);
-    let response = {};
+    this.request = new RequestHandler(req, this.routes, this.response);
 
     try {
-      let payload = this.routes.find((path) =>
-        path.pathname == pathname && path.method == method.toLowerCase()
-      );
-      if (!payload && pathname.lastIndexOf(".") !== -1) {
-        const values = pathname.split("/").filter((v) => v.length);
-        payload = this.routes.find((path) =>
-          path.pathname == "/" && path.method == method.toLowerCase()
-        );
-        values[0] = `${payload.value.split(":")[0]}/${values[0]}`;
-        response.data = await scanDir(values[0], values[1]);
+      if (!this.request.getPayload() && pathname.lastIndexOf(".") !== -1) {
+        return this.response.send(
+          await this.request.handleFilePathRequest() as Uint8Array,
+        ).ok();
       } else {
-        const upgrade = req.headers.get("upgrade");
+        this.request.handleWebSocket();
 
-        if (upgrade && upgrade.toLowerCase() === "websocket") {
-          const resp = await Deno.upgradeWebSocket(req);
-          payload = this.routes.find((path) => path.pathname == pathname);
-          payload.value(resp.socket, this.responseHandler);
-          return resp.response;
+        if (
+          this.request.getPayload() &&
+          typeof this.request.getPayload()!.value == "string" &&
+          method.toLowerCase() == "get"
+        ) {
+          return this.response.send(
+            await this.request.handleStaticRoutes(
+              this.request.getPayload() as route_type,
+            ),
+          ).ok();
         }
+        if (
+          !this.request.getPayload() ||
+          typeof this.request.getPayload()!.value != "function"
+        ) return this.response.bad_request();
 
-        if (payload && payload.value && method.toLowerCase() == "get") {
-          if (typeof payload.value != "function") {
-            const values = payload.value.split(":");
-            response.data = await scanDir(values[0], values[1]);
-          } else {
-            response = payload.value(req, this.responseHandler);
-          }
-        } else if (payload && payload.value && method.toLowerCase() == "post") {
-          response = payload.value(req, this.responseHandler);
-        } else if (payload && payload.value && method.toLowerCase() == "put") {
-          response = payload.value(req, this.responseHandler);
-        } else if (
-          payload && payload.value && method.toLowerCase() == "patch"
-        ) {
-          response = payload.value(req, this.responseHandler);
-        } else if (
-          payload && payload.value && method.toLowerCase() == "delete"
-        ) {
-          response = payload.value(req, this.responseHandler);
-        } else {
-          response = {
-            data: "Page Not Found",
-            options: {
-              status: 404,
-              statusText: "Not Found",
-            },
-          };
-        }
+        if (method.toLowerCase() == "get") return this.request.end();
+        if (method.toLowerCase() == "post") return this.request.end();
+        if (method.toLowerCase() == "put") return this.request.end();
+        if (method.toLowerCase() == "patch") return this.request.end();
+        if (method.toLowerCase() == "delete") return this.request.end();
       }
-
-      return new Response(response.data, response.options);
+      return this.response.not_found();
     } catch (error) {
-      return new Response(error.message);
+      if (error.message.toLowerCase().indexOf("no such file") !== -1) {
+        return this.response.not_found(error.message);
+      }
+      return this.response.server_error(error.message);
     }
-  }
-
-  get(pathname: string, value) {
-    this.userDefinedPath = pathname.trim().length !== 0
-      ? pathname
-      : pathname + "/";
-    this.routes.push({ pathname: this.userDefinedPath, method: "get", value });
-    return this;
-  }
-
-  post(pathname: string, value) {
-    this.userDefinedPath = pathname.trim().length !== 0
-      ? pathname
-      : pathname + "/";
-    this.routes.push({ pathname: this.userDefinedPath, method: "post", value });
-    return this;
-  }
-
-  put(pathname: string, value) {
-    this.userDefinedPath = pathname.trim().length !== 0
-      ? pathname
-      : pathname + "/";
-    this.routes.push({ pathname: this.userDefinedPath, method: "put", value });
-    return this;
-  }
-
-  patch(pathname: string, value) {
-    this.userDefinedPath = pathname.trim().length !== 0
-      ? pathname
-      : pathname + "/";
-    this.routes.push({
-      pathname: this.userDefinedPath,
-      method: "patch",
-      value,
-    });
-    return this;
-  }
-
-  delete(pathname: string, value) {
-    this.userDefinedPath = pathname.trim().length !== 0
-      ? pathname
-      : pathname + "/";
-    this.routes.push({
-      pathname: this.userDefinedPath,
-      method: "delete",
-      value,
-    });
-    return this;
-  }
-
-  socket(pathname: string, value) {
-    this.userDefinedPath = pathname.trim().length !== 0
-      ? pathname
-      : pathname + "/";
-    this.routes.push({
-      pathname: this.userDefinedPath,
-      method: "socket",
-      value,
-    });
-    return this;
   }
 }
