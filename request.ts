@@ -38,19 +38,14 @@ export class RequestHandler {
   }
 
   handleWebSocket() {
-    const upgrade = this.request.headers.get("upgrade");
+    const resp = Deno.upgradeWebSocket(this.request);
+    const data = this.routes.find((path) => path.pathname == this.pathname);
 
-    if (upgrade && upgrade.toLowerCase() === "websocket") {
-      const resp = Deno.upgradeWebSocket(this.request);
-      const data = this.routes.find((path) => path.pathname == this.pathname);
-
-      if (!data || typeof data.value != "function") {
-        return this.response.bad_request();
-      }
-      data.value(resp.socket, this.response);
-      return resp.response;
+    if (!data || typeof data.value != "function") {
+      return this.response.bad_request();
     }
-    return this.response.not_found();
+    data.value(resp.socket, this.response);
+    return resp.response;
   }
 
   handleStaticRoutes(payload: route_type): Promise<Uint8Array> {

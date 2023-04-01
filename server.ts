@@ -51,7 +51,10 @@ export class Application {
           await this.request.handleFilePathRequest() as Uint8Array,
         ).ok();
       } else {
-        this.request.handleWebSocket();
+        const upgrade = req.headers.get("upgrade") || "";
+        if (upgrade.toLowerCase() == "websocket") {
+          return this.request.handleWebSocket();
+        }
 
         if (
           this.request.getPayload() &&
